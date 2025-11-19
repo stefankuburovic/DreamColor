@@ -1,0 +1,5 @@
+{
+  "name": "DreamColor",
+  "description": "A magical coloring book generator powered by Gemini. Create personalized coloring pages and download them as a PDF.",
+  "requestFramePermissions": []
+}
