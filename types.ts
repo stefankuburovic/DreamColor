@@ -1,8 +1,10 @@
+
 export interface GeneratedImage {
   id: string;
   url: string; // Base64 data URL
   type: 'cover' | 'page';
   prompt: string;
+  isLoading?: boolean;
 }
 
 export interface BookSettings {

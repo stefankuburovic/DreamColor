@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { BookOpen, Palette, Download, Sparkles, Wand2, AlertCircle } from 'lucide-react';
+import { BookOpen, Palette, Download, Sparkles, Wand2, AlertCircle, Plus } from 'lucide-react';
 import { generateColoringPage, generateCoverImage } from './services/geminiService';
 import { generatePDF } from './utils/pdfUtils';
 import ChatBot from './components/ChatBot';
@@ -27,28 +28,40 @@ const App: React.FC = () => {
         id: 'cover',
         url: coverUrl,
         type: 'cover',
-        prompt: settings.theme
+        prompt: settings.theme,
+        isLoading: false
       };
       setImages([coverImage]);
 
-      // 2. Generate 5 Pages Sequentially (to avoid hitting rate limits too hard if any)
-      // Optimistic update: Show placeholder or loading for these? No, just append as they come.
+      // 2. Generate 5 Pages Sequentially
       const tempImages = [coverImage];
+      
+      const variations = ['scene', 'character close up', 'action pose', 'funny moment', 'peaceful scene'];
       
       for (let i = 1; i <= 5; i++) {
         setProgressMsg(`Sketching page ${i} of 5...`);
         
-        // Slight variation in prompt logic could be handled in service, but for now simple theme is passed
-        // Maybe add variation keywords locally
-        const variations = ['scene', 'character close up', 'action pose', 'funny moment', 'peaceful scene'];
         const specificTheme = `${settings.theme} - ${variations[i-1]}`;
         
+        // Add placeholder
+        const placeholderId = `page-${i}`;
+        const loadingImage: GeneratedImage = {
+           id: placeholderId,
+           url: '',
+           type: 'page',
+           prompt: specificTheme,
+           isLoading: true
+        };
+        setImages([...tempImages, loadingImage]);
+
         const pageUrl = await generateColoringPage(specificTheme);
+        
         const pageImage: GeneratedImage = {
-          id: `page-${i}`,
+          id: placeholderId,
           url: pageUrl,
           type: 'page',
-          prompt: specificTheme
+          prompt: specificTheme,
+          isLoading: false
         };
         
         tempImages.push(pageImage);
@@ -65,9 +78,73 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddPage = async () => {
+    if (!settings.theme) return;
+    
+    const newId = `page-${Date.now()}`;
+    const defaultPrompt = `${settings.theme} - new scene`;
+    
+    // Add loading placeholder
+    const newImage: GeneratedImage = {
+      id: newId,
+      url: '',
+      type: 'page',
+      prompt: defaultPrompt,
+      isLoading: true
+    };
+    
+    setImages(prev => [...prev, newImage]);
+
+    try {
+      const url = await generateColoringPage(defaultPrompt);
+      setImages(prev => prev.map(img => 
+        img.id === newId ? { ...img, url, isLoading: false } : img
+      ));
+    } catch (error) {
+       console.error("Failed to add page", error);
+       // Remove the placeholder on error
+       setImages(prev => prev.filter(img => img.id !== newId));
+    }
+  };
+
+  const handleRegeneratePage = async (id: string, newPrompt: string) => {
+    // Set loading state
+    setImages(prev => prev.map(img => 
+      img.id === id ? { ...img, isLoading: true, prompt: newPrompt } : img
+    ));
+
+    try {
+      let url: string;
+      const imageToUpdate = images.find(img => img.id === id);
+      
+      if (imageToUpdate?.type === 'cover') {
+         url = await generateCoverImage(newPrompt);
+      } else {
+         url = await generateColoringPage(newPrompt);
+      }
+
+      setImages(prev => prev.map(img => 
+        img.id === id ? { ...img, url, isLoading: false } : img
+      ));
+    } catch (error) {
+      console.error("Failed to regenerate", error);
+      // Revert loading state
+      setImages(prev => prev.map(img => 
+        img.id === id ? { ...img, isLoading: false } : img
+      ));
+    }
+  };
+
+  const handleDeletePage = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this page?')) {
+      setImages(prev => prev.filter(img => img.id !== id));
+    }
+  };
+
   const handleDownload = () => {
     if (images.length > 0) {
-      generatePDF(images, settings);
+      const readyImages = images.filter(img => !img.isLoading && img.url);
+      generatePDF(readyImages, settings);
     }
   };
 
@@ -91,10 +168,11 @@ const App: React.FC = () => {
               DreamColor
             </h1>
           </div>
-          {status === GenerationStatus.COMPLETE && (
+          {images.length > 0 && (
             <button 
               onClick={handleDownload}
-              className="hidden md:flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-2.5 rounded-full font-bold shadow-md transition-transform hover:scale-105 active:scale-95"
+              disabled={images.some(i => i.isLoading)}
+              className="hidden md:flex items-center gap-2 bg-green-500 hover:bg-green-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-full font-bold shadow-md transition-transform hover:scale-105 active:scale-95"
             >
               <Download size={20} />
               Download PDF
@@ -153,13 +231,13 @@ const App: React.FC = () => {
               ) : (
                 <>
                   <Wand2 />
-                  Generate Coloring Book
+                  {images.length > 0 ? 'Start New Book' : 'Generate Coloring Book'}
                 </>
               )}
             </button>
 
             {/* Status Message */}
-            {status !== GenerationStatus.IDLE && (
+            {status !== GenerationStatus.IDLE && status !== GenerationStatus.COMPLETE && (
               <div className={`flex items-center justify-center gap-2 text-sm font-medium animate-pulse ${status === GenerationStatus.ERROR ? 'text-red-500' : 'text-brand-600'}`}>
                 {status === GenerationStatus.ERROR ? <AlertCircle size={16} /> : <Sparkles size={16} />}
                 {progressMsg}
@@ -172,38 +250,45 @@ const App: React.FC = () => {
         {images.length > 0 && (
           <section className="space-y-6">
             <div className="flex items-center justify-between px-2">
-              <h3 className="font-display text-2xl font-bold text-slate-800">Preview Pages</h3>
+              <h3 className="font-display text-2xl font-bold text-slate-800">Your Book Pages</h3>
               <span className="bg-brand-100 text-brand-700 px-3 py-1 rounded-full text-sm font-bold">
-                {images.length} / 6 Generated
+                {images.length} Pages
               </span>
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {images.map((img) => (
-                <ImageCard key={img.id} image={img} />
+                <ImageCard 
+                  key={img.id} 
+                  image={img} 
+                  onRegenerate={handleRegeneratePage}
+                  onDelete={handleDeletePage}
+                />
               ))}
               
-              {/* Skeletons for remaining */}
-              {status === GenerationStatus.GENERATING && Array.from({ length: 6 - images.length }).map((_, i) => (
-                <div key={`skel-${i}`} className="aspect-[3/4] bg-white rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 animate-pulse">
-                  <Palette size={32} className="mb-2 opacity-50" />
-                  <span className="text-xs font-bold">Waiting...</span>
+              {/* Add Page Button */}
+              <button 
+                onClick={handleAddPage}
+                className="aspect-[3/4] rounded-xl border-3 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50 transition-all flex flex-col items-center justify-center text-slate-400 hover:text-brand-500 gap-3 group"
+              >
+                <div className="bg-slate-100 group-hover:bg-white p-4 rounded-full transition-colors">
+                  <Plus size={32} strokeWidth={3} />
                 </div>
-              ))}
+                <span className="font-bold text-lg">Add Page</span>
+              </button>
             </div>
 
             {/* Mobile Download Button */}
-            {status === GenerationStatus.COMPLETE && (
-              <div className="flex justify-center md:hidden pt-4">
-                <button 
-                  onClick={handleDownload}
-                  className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-8 py-4 rounded-full font-bold shadow-lg w-full justify-center"
-                >
-                  <Download size={20} />
-                  Download PDF Book
-                </button>
-              </div>
-            )}
+            <div className="flex justify-center md:hidden pt-4">
+              <button 
+                onClick={handleDownload}
+                disabled={images.some(i => i.isLoading)}
+                className="flex items-center gap-2 bg-green-500 hover:bg-green-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-8 py-4 rounded-full font-bold shadow-lg w-full justify-center"
+              >
+                <Download size={20} />
+                Download PDF Book
+              </button>
+            </div>
           </section>
         )}
       </main>

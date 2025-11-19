@@ -1,3 +1,4 @@
+
 import { jsPDF } from "jspdf";
 import { GeneratedImage, BookSettings } from "../types";
 
@@ -27,19 +28,25 @@ export const generatePDF = async (images: GeneratedImage[], settings: BookSettin
     const subtitle = "Coloring Adventure";
     
     // Simple centered text logic
-    const textWidth = doc.getTextWidth(title);
-    const x = (pageWidth - textWidth) / 2;
-    const y = 50; // Top offset
+    const titleWidth = doc.getTextWidth(title);
+    const subtitleWidth = doc.getTextWidth(subtitle);
+    
+    const xTitle = (pageWidth - titleWidth) / 2;
+    const xSubtitle = (pageWidth - subtitleWidth) / 2;
+    
+    const yTitle = 50; // Top offset
+    // Increased spacing from 20 to 35 to ensure no overlap
+    const ySubtitle = yTitle + 35; 
 
     // Shadow
     doc.setTextColor(0, 0, 0);
-    doc.text(title, x + 1, y + 1);
-    doc.text(subtitle, (pageWidth - doc.getTextWidth(subtitle)) / 2 + 1, y + 15 + 1);
+    doc.text(title, xTitle + 1, yTitle + 1);
+    doc.text(subtitle, xSubtitle + 1, ySubtitle + 1);
 
     // Main Text
     doc.setTextColor(255, 255, 255); // White
-    doc.text(title, x, y);
-    doc.text(subtitle, (pageWidth - doc.getTextWidth(subtitle)) / 2, y + 15);
+    doc.text(title, xTitle, yTitle);
+    doc.text(subtitle, xSubtitle, ySubtitle);
   } else {
     // Fallback text cover if generation failed
     doc.setFillColor(255, 255, 255);
@@ -62,14 +69,9 @@ export const generatePDF = async (images: GeneratedImage[], settings: BookSettin
     // Image constrained to margins
     const margin = 20;
     const imgWidth = pageWidth - (margin * 2);
-    const imgHeight = pageHeight - (margin * 2) - 20; // Space for footer
+    const imgHeight = pageHeight - (margin * 2); 
 
     doc.addImage(page.url, "PNG", margin, margin, imgWidth, imgHeight, undefined, 'FAST');
-
-    // Footer
-    doc.setFontSize(12);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Page ${index + 1} - ${settings.theme}`, margin, pageHeight - 10);
   });
 
   doc.save(`${settings.childName}-Coloring-Book.pdf`);
